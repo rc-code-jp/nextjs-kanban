@@ -49,6 +49,7 @@ export function KanbanColumn({ column, tasks }: Props) {
     };
 
     const onDelete = () => {
+        if (!window.confirm("Are you sure you want to delete this column? All tasks in it will be lost.")) return;
         startTransition(async () => {
             await deleteColumnAction(column.id);
         });

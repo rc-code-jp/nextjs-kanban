@@ -37,6 +37,7 @@ export function KanbanCard({ task }: Props) {
     const [pending, startTransition] = useTransition();
 
     const onDelete = () => {
+        if (!window.confirm("Are you sure you want to delete this task?")) return;
         startTransition(async () => {
             await deleteTaskAction(task.id);
         });
