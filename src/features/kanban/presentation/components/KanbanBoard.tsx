@@ -173,7 +173,8 @@ export function KanbanBoard({ initialBoard }: Props) {
         const activeId = active.id;
         const overId = over.id;
 
-        if (activeId === overId) return;
+        // Removed early return activeId === overId to allow persistence even if dnd-kit thinks we didn't move
+        // (because onDragOver already moved the item visually to the spot under the cursor).
 
         // Handle Column Reordering
         if (active.data.current?.type === "Column") {
@@ -208,10 +209,17 @@ export function KanbanBoard({ initialBoard }: Props) {
 
         if (activeColumn) {
             const taskIndex = activeColumn.tasks.findIndex(t => t.id === activeId);
+
             // Persist to DB
             startTransition(async () => {
-                await moveTaskAction(String(activeId), activeColumn.id, taskIndex);
+                try {
+                    await moveTaskAction(String(activeId), activeColumn.id, taskIndex);
+                } catch (e) {
+                    // Handle error
+                }
             });
+        } else {
+            // Handle error
         }
     };
 

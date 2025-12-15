@@ -65,20 +65,48 @@ export class DrizzleKanbanRepository implements KanbanRepository {
     }
 
     async moveTask(taskId: string, newColumnId: string, newOrder: number): Promise<void> {
-        await db.update(tasks)
-            .set({ columnId: newColumnId, order: newOrder })
-            .where(eq(tasks.id, taskId));
+        // 1. Get all tasks in the target column (excluding the one being moved, to avoid confusion if it's already there)
+        const targetColumnTasks = await db
+            .select()
+            .from(tasks)
+            .where(eq(tasks.columnId, newColumnId))
+            .orderBy(asc(tasks.order));
 
-        // Note: A real production ready system would need to rebalance orders here
-        // For simplicity of this MVP, we are doing a direct update, but the UI might get slightly out
-        // of sync if we don't fix the orders of other items.
-        // For a robust drag&drop, we usually update all items in the target column.
+        // Filter out the task being moved if it's in the list (same column move) or just to be safe
+        const otherTasks = targetColumnTasks.filter((t) => t.id !== taskId);
 
-        // We will improve this logic if time permits or if the user complains.
-        // Actually, for a proper Kanban, we MUST fix the orders or things will jump around.
-        // Let's implement a simple reorder strategy in the Application layer or here.
-        // I'll defer complex reordering to the specific Move Task Server Action for better control, 
-        // or keep it simple for now. 
+        // 2. Insert the task at the new position locally
+        // We need to know what the task object is, or at least we know its ID.
+        // We can just represent it by its ID for the order update.
+
+        // Ensure newOrder is within bounds [0, length]
+        const clampedOrder = Math.max(0, Math.min(newOrder, otherTasks.length));
+
+        const newOrderList = [
+            ...otherTasks.slice(0, clampedOrder),
+            { id: taskId }, // Placeholder for the moved task
+            ...otherTasks.slice(clampedOrder),
+        ];
+
+        // 3. Update all tasks with their new order
+        // We use a transaction or sequential updates. SQLite is fast enough for sequential here.
+        // We update the moved task to have the new Column ID as well.
+
+        for (let i = 0; i < newOrderList.length; i++) {
+            const t = newOrderList[i];
+            if (t.id === taskId) {
+                await db.update(tasks)
+                    .set({ columnId: newColumnId, order: i })
+                    .where(eq(tasks.id, taskId));
+            } else {
+                // Only update if order changed to optimize? 
+                // For simplicity/robustness, just update. 
+                // Optimization: check if (t.order !== i)
+                await db.update(tasks)
+                    .set({ order: i })
+                    .where(eq(tasks.id, t.id));
+            }
+        }
     }
 
     async reorderColumn(columnId: string, newOrder: number): Promise<void> {
